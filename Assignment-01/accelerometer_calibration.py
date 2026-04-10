@@ -64,7 +64,7 @@ ax_f = filtfilt(bf, af, ax_raw_cal)
 ay_f = filtfilt(bf, af, ay_raw_cal)
 az_f = filtfilt(bf, af, az_raw_cal)
 
-print(f"\n  Butterworth : order={ORDER}, cut-off={CUTOFF} Hz  (optimised, was 5.0 Hz)")
+print(f"\n  Butterworth : order={ORDER}, cut-off={CUTOFF} Hz")
 
 # GRAVITY ESTIMATION
 N_GRAV = 6    # first 6 samples: confirmed stationary (raw std = 0.009 m/s²)
@@ -87,8 +87,7 @@ rs_y     = pd.Series(ay_net).rolling(WIN, center=True).std().bfill().ffill().val
 stat_mask = rs_y < ZUPT_THR
 
 stat_idx  = np.where(stat_mask)[0]
-print(f"\n  ZUPT anchors : {stat_mask.sum()} samples ({100*stat_mask.mean():.1f}%)  "
-      f"(was 25/12.6% before)")
+print(f"\n  ZUPT anchors : {stat_mask.sum()} samples ({100*stat_mask.mean():.1f}%)")
 if len(stat_idx):
     mid = stat_idx[stat_idx > N // 4]
     print(f"  Start window : t=0.00 → t={time_s[stat_idx[min(9,len(stat_idx)-1)]]:.2f}s")
@@ -295,8 +294,7 @@ ax.annotate(f"Peak: {peak_cm:.1f} cm\n({err_pct:.1f}% error)",
             fontsize=9, color="#2980b9", fontweight="bold",
             arrowprops=dict(arrowstyle="->", color="#2980b9"))
 ax.set_ylabel("Y Position (cm)")
-ax.set_title(f"Vertical (Y) Position: Raw vs Kalman vs RTS — Peak Error {err_pct:.1f}% "
-             f"(was 29% before)")
+ax.set_title(f"Vertical (Y) Position: Raw vs Kalman vs RTS — Peak Error {err_pct:.1f}% ")
 ax.legend(fontsize=9, loc="upper left"); ax.grid(True, alpha=0.3)
 
 ax = axes[1]
@@ -386,8 +384,8 @@ print(f"    RTS Smoother (optimal)  : {peak_cm:.2f} cm  ← {err_pct:.1f}% error
 print(f"    Error: {err_pct:.1f}% position error")
 
 print("\n  FILTER CONFIGURATION")
-print(f"    Pre-filter   : Butterworth order={ORDER}, cut-off={CUTOFF} Hz  (was 5.0)")
-print(f"    ZUPT thr     : {ZUPT_THR} m/s² (was 0.08)  → {nz_y} ZUPT windows ({100*nz_y/N:.1f}%)")
+print(f"    Pre-filter   : Butterworth order={ORDER}, cut-off={CUTOFF} Hz")
+print(f"    ZUPT thr     : {ZUPT_THR} m/s² ZUPT windows ({100*nz_y/N:.1f}%)")
 print(f"    ZUPT R_vel   : {5e-4} (m/s)²  (was 0.001)")
 print(f"    Model        : 3-state [position, velocity, accel_bias]")
 print(f"    Algorithm    : Forward Kalman + RTS backward smoother")
