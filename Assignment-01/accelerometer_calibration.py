@@ -7,7 +7,7 @@ from scipy.signal import butter, filtfilt, welch
 import os
 
 DATA_DIR = "data/"
-SAVE_DIR = "results/"
+SAVE_DIR = "graphs/"
 os.makedirs(SAVE_DIR, exist_ok=True)
 
 
@@ -32,7 +32,7 @@ scale_z = abs((sz_max - sz_min) / (2 * g_true))
 
 bias_x_cal = (sx_max + sx_min) / 2
 bias_y_cal = (sy_max + sy_min) / 2
-bias_z_cal = (sz_max + sz_min) / 2   # +0.643 m/s² real Z offset
+bias_z_cal = (sz_max + sz_min) / 2
 
 print("  SIX-POSITION CALIBRATION")
 print(f"  Scale  : X={scale_x:.4f}  Y={scale_y:.4f}  Z={scale_z:.4f}")
@@ -54,8 +54,7 @@ print(f"\n  Sample rate : {fs:.4f} Hz  |  dt = {dt*1000:.3f} ms")
 print(f"  Duration    : {time_s[-1]:.3f} s  |  N = {N} samples")
 
 # OPTIMISED BUTTERWORTH PRE-FILTER
-# 4.2 Hz cut-off: covers full human-motion bandwidth (0–4 Hz) while
-# removing vibration noise above 4.2 Hz.
+# 4.2 Hz cut-off: covers full human-motion bandwidth (0–4 Hz) while removing vibration noise above 4.2 Hz.
 CUTOFF = 4.2   # Hz
 ORDER  = 4
 
@@ -364,7 +363,7 @@ plt.tight_layout()
 savefig("fig7_position_uncertainty.png")
 
 
-print("  OPTIMISED PIPELINE — FINAL SUMMARY")
+print("OPTIMISED PIPELINE")
 
 print("\n  CALIBRATION")
 print(f"    Scale  X={scale_x:.4f}  Y={scale_y:.4f}  Z={scale_z:.4f}")
@@ -386,9 +385,7 @@ print(f"    Error: {err_pct:.1f}% position error")
 print("\n  FILTER CONFIGURATION")
 print(f"    Pre-filter   : Butterworth order={ORDER}, cut-off={CUTOFF} Hz")
 print(f"    ZUPT thr     : {ZUPT_THR} m/s² ZUPT windows ({100*nz_y/N:.1f}%)")
-print(f"    ZUPT R_vel   : {5e-4} (m/s)²  (was 0.001)")
-print(f"    Model        : 3-state [position, velocity, accel_bias]")
-print(f"    Algorithm    : Forward Kalman + RTS backward smoother")
+print(f"    ZUPT R_vel   : {5e-4} (m/s)²")
 print(f"    Bias end     : {bias_y[-1]*1000:.4f} mm/s²")
 
 print("\n  PHYSICAL LIMIT")
