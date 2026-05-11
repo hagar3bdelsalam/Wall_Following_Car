@@ -87,6 +87,8 @@ float RIGHT_TRIM       = 1.0;
 int   TURN_SPEED_RIGHT = 100;  // pivot turn: left wheel PWM (M1) when turning right
 int   TURN_SPEED_LEFT  = 113;  // pivot turn: right wheel PWM (M2) when turning left (tune via ML)
 int   STOP_DISTANCE    = 30;   // front obstacle: trigger turn/stop below this (cm); tune via O
+int   BACK_SPEED       = 100;  // reverse PWM (both wheels); tune via BS
+int   BACK_TIME_MS     = 1000; // reverse duration in ms for dead-end escape; tune via BT
 
 // ============================================================
 // --- HARDWARE SETTINGS ---
@@ -510,9 +512,9 @@ static void goForward(int seconds) {
 }
 
 static void goBackwardMs(uint32_t ms) {
-    /* Stronger than trimmed cruise — helps break static friction when boxed in. */
-    int l = (int)(TURN_SPEED_RIGHT * LEFT_TRIM);
-    int r = (int)(TURN_SPEED_RIGHT * RIGHT_TRIM);
+    /* Uses tunable BACK_SPEED — adjust via BS command over serial. */
+    int l = (int)(BACK_SPEED * LEFT_TRIM);
+    int r = (int)(BACK_SPEED * RIGHT_TRIM);
     if (l < 1) l = 1;
     if (r < 1) r = 1;
     runMotor(1, l, false);
@@ -644,7 +646,9 @@ void setup(void) {
         uart_println("'ML120' = Left pivot turn PWM (M2) | 'MR100' = Right pivot PWM (M1)");
         uart_println("'P2.5' = Set Kp to 2.5 | 'D15' = Set Kd to 15");
         uart_println("'dcr0.85' = Set Right Trim | 'dcl0.88' = Set Left Trim");
-        uart_println("'F3' = Move Forward 3s | 'V100' = Base speed | 'O30' = Front stop distance (cm) | '?' = Settings");
+        uart_println("'F3' = Move Forward 3s | 'V100' = Base speed | 'O30' = Front stop distance (cm)");
+        uart_println("'B500' = Reverse 500ms | 'BS120' = Set back speed | 'BT500' = Set back time(ms)");
+        uart_println("'?' = Settings");
     }
     myDelayMs(3000);
 }
@@ -672,6 +676,54 @@ void loop(void) {
         }
         else if (cmd == 'R' || cmd == 'r') { isRunning = false; runSequenceRight(); }
         else if (cmd == 'L' || cmd == 'l') { isRunning = false; runSequenceLeft();  }
+        else if (cmd == 'B' || cmd == 'b') {
+            myDelayMs(5);
+            int16_t nextChar = uart_peek_wait_us(UART_PARSE_INTER_BYTE_US);
+            while (nextChar == '\r' || nextChar == '\n') {
+                uart_read_blocking();
+                nextChar = uart_peek_wait_us(UART_PARSE_INTER_BYTE_US);
+            }
+            if (nextChar == 'S' || nextChar == 's') {
+                // BS<val>: set back speed
+                uart_read_blocking();
+                int v = (int)uart_parse_long();
+                if (v < 0) v = 0;
+                if (v > MAX_SPEED) v = MAX_SPEED;
+                BACK_SPEED = v;
+                if (DEBUG) {
+                    uart_print_str(">>> Back Speed updated to: ");
+                    uart_print_long(BACK_SPEED);
+                    uart_println("");
+                }
+            } else if (nextChar == 'T' || nextChar == 't') {
+                // BT<ms>: set back time for dead-end reverse
+                uart_read_blocking();
+                int v = (int)uart_parse_long();
+                if (v < 50) v = 50;
+                if (v > 5000) v = 5000;
+                BACK_TIME_MS = v;
+                if (DEBUG) {
+                    uart_print_str(">>> Back Time updated to: ");
+                    uart_print_long(BACK_TIME_MS);
+                    uart_println("ms");
+                }
+            } else {
+                // B<ms>: reverse for given milliseconds
+                isRunning = false;
+                int ms = (int)uart_parse_long();
+                if (ms > 0) {
+                    if (DEBUG) {
+                        uart_print_str(">>> Reversing for ");
+                        uart_print_long(ms);
+                        uart_print_str("ms at PWM ");
+                        uart_print_long(BACK_SPEED);
+                        uart_println("");
+                    }
+                    goBackwardMs((uint32_t)ms);
+                    if (DEBUG) uart_println(">>> Done. Stopped.");
+                }
+            }
+        }
         else if (cmd == 'F' || cmd == 'f') {
             isRunning = false;
             int seconds = (int)uart_parse_long();
@@ -814,6 +866,8 @@ void loop(void) {
                 uart_print_str(" | L_Trim:");            uart_print_float(LEFT_TRIM, 3);
                 uart_print_str(" | R_Trim:");            uart_print_float(RIGHT_TRIM, 3);
                 uart_print_str(" | Stop(cm):");           uart_print_long(STOP_DISTANCE);
+                uart_print_str(" | BackPWM:");            uart_print_long(BACK_SPEED);
+                uart_print_str(" | BackMs:");             uart_print_long(BACK_TIME_MS);
                 uart_println("");
             }
         }
@@ -859,8 +913,12 @@ void loop(void) {
                 return;
             }
             if (!deadReverseTrialUsed) {
-                if (DEBUG) uart_println(">>> Dead range: reverse 200ms (one trial).");
-                goBackwardMs(200);
+                if (DEBUG) {
+                    uart_print_str(">>> Dead range: reverse ");
+                    uart_print_long(BACK_TIME_MS);
+                    uart_println("ms.");
+                }
+                goBackwardMs((uint32_t)BACK_TIME_MS);
                 deadReverseTrialUsed = true;
                 return;
             }
