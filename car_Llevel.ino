@@ -11,6 +11,7 @@
 #include <avr/io.h>
 #include <avr/interrupt.h>
 // No <util/delay.h> — all timing is timer-managed (Timer0 CTC + Timer1 TCNT1L).
+#include <avr/pgmspace.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -306,7 +307,23 @@ static void uart_print_str(const char* s) {
 
 static void uart_println(const char* s) {
     uart_print_str(s);
-    uart_print_str("\r\n");
+    uart_write('\r');
+    uart_write('\n');
+}
+
+// Flash-string (PROGMEM) print helpers — reads string from program
+// memory one byte at a time via pgm_read_byte(), saving ~1800 bytes of RAM.
+static void uart_print_P(const char* pstr) {
+    char c;
+    while ((c = pgm_read_byte(pstr++)) != '\0') {
+        uart_write((uint8_t)c);
+    }
+}
+
+static void uart_println_P(const char* pstr) {
+    uart_print_P(pstr);
+    uart_write('\r');
+    uart_write('\n');
 }
 
 static void uart_print_long(long n) {
@@ -533,14 +550,14 @@ static void recordTurn(char dir) {
 //   Turns: N
 //   Sequence: L, R, R, L, L
 static void printDeadEndReport(void) {
-    uart_print_str("Turns: ");
+    uart_print_P(PSTR("Turns: "));
     uart_print_ulong(turnCount);
-    uart_print_str("\r\nSequence: ");
+    uart_print_P(PSTR("\r\nSequence: "));
     for (uint8_t i = 0; i < turnCount; i++) {
-        if (i) uart_print_str(", ");
+        if (i) uart_print_P(PSTR(", "));
         uart_write((uint8_t)turnSequence[i]);
     }
-    uart_print_str("\r\n");
+    uart_print_P(PSTR("\r\n"));
 }
 
 // ============================================================
@@ -548,15 +565,15 @@ static void printDeadEndReport(void) {
 // ============================================================
 static void goForward(int seconds) {
     if (DEBUG) {
-        uart_print_str(">>> Moving Forward for ");
+        uart_print_P(PSTR(">>> Moving Forward for "));
         uart_print_long(seconds);
-        uart_println("s.");
+        uart_println_P(PSTR("s."));
     }
     runMotor(1, (int)(BASE_SPEED * LEFT_TRIM),  true);
     runMotor(2, (int)(BASE_SPEED * RIGHT_TRIM), true);
     myDelayMs((uint32_t)seconds * 1000UL);
     stopMotors();
-    if (DEBUG) uart_println(">>> Done. Stopped.");
+    if (DEBUG) uart_println_P(PSTR(">>> Done. Stopped."));
 }
 
 static void goBackwardMs(uint32_t ms) {
@@ -575,7 +592,7 @@ static void goBackwardMs(uint32_t ms) {
 
 // Pivot Turn: Left wheel drives, right wheel dead.
 static void turnRight90(void) {
-    if (DEBUG) uart_println(">>> Turning RIGHT (Pivot Turn)");
+    if (DEBUG) uart_println_P(PSTR(">>> Turning RIGHT (Pivot Turn)"));
     stopMotors(); myDelayMs(200);
     cli(); leftTicks = 0; sei();
 
@@ -584,9 +601,9 @@ static void turnRight90(void) {
 
     while (leftTicks < (unsigned long)TURN_TICKS_RIGHT) {
         if (DEBUG) {
-            uart_print_str("Turning Right - Left Ticks: ");
+            uart_print_P(PSTR("Turning Right - Left Ticks: "));
             uart_print_ulong(leftTicks);
-            uart_print_str("\r\n");
+            uart_print_P(PSTR("\r\n"));
         }
         myDelayMs(20);
     }
@@ -598,7 +615,7 @@ static void turnRight90(void) {
 
 // Pivot Turn: Right wheel drives, left wheel dead.
 static void turnLeft90(void) {
-    if (DEBUG) uart_println(">>> Turning LEFT (Pivot Turn)");
+    if (DEBUG) uart_println_P(PSTR(">>> Turning LEFT (Pivot Turn)"));
     stopMotors(); myDelayMs(200);
     cli(); rightTicks = 0; sei();
 
@@ -607,9 +624,9 @@ static void turnLeft90(void) {
 
     while (rightTicks < (unsigned long)TURN_TICKS_LEFT) {
         if (DEBUG) {
-            uart_print_str("Turning Left - Right Ticks: ");
+            uart_print_P(PSTR("Turning Left - Right Ticks: "));
             uart_print_ulong(rightTicks);
-            uart_print_str("\r\n");
+            uart_print_P(PSTR("\r\n"));
         }
         myDelayMs(20);
     }
@@ -623,7 +640,7 @@ static void runSequenceRight(void) {
     int leftSpeed  = (int)(BASE_SPEED * LEFT_TRIM);
     int rightSpeed = (int)(BASE_SPEED * RIGHT_TRIM);
 
-    // if (DEBUG) uart_println(">>> RIGHT Sequence: 1. Moving Forward (2s)");
+    // if (DEBUG) uart_println_P(PSTR(">>> RIGHT Sequence: 1. Moving Forward (2s)"));
     // runMotor(1, leftSpeed,  true);
     // runMotor(2, rightSpeed, true);
     // myDelayMs(2000);
@@ -631,12 +648,12 @@ static void runSequenceRight(void) {
      //stopMotors(); myDelayMs(200);
     turnRight90();
 
-    // if (DEBUG) uart_println(">>> RIGHT Sequence: 3. Moving Forward (1s)");
+    // if (DEBUG) uart_println_P(PSTR(">>> RIGHT Sequence: 3. Moving Forward (1s)"));
     // runMotor(1, leftSpeed,  true);
     // runMotor(2, rightSpeed, true);
     // myDelayMs(1000);
 
-    // if (DEBUG) uart_println(">>> Sequence Complete. Stopped.");
+    // if (DEBUG) uart_println_P(PSTR(">>> Sequence Complete. Stopped."));
     //stopMotors();
 }
 
@@ -644,7 +661,7 @@ static void runSequenceLeft(void) {
     int leftSpeed  = (int)(BASE_SPEED * LEFT_TRIM);
     int rightSpeed = (int)(BASE_SPEED * RIGHT_TRIM);
 
-    //if (DEBUG) uart_println(">>> LEFT Sequence: 1. Moving Forward (2s)");
+    //if (DEBUG) uart_println_P(PSTR(">>> LEFT Sequence: 1. Moving Forward (2s)"));
     // runMotor(1, leftSpeed,  true);
     // runMotor(2, rightSpeed, true);
     // myDelayMs(2000);
@@ -652,17 +669,17 @@ static void runSequenceLeft(void) {
    // stopMotors(); myDelayMs(200);
     turnLeft90();
 
-    // if (DEBUG) uart_println(">>> LEFT Sequence: 3. Moving Forward (1s)");
+    // if (DEBUG) uart_println_P(PSTR(">>> LEFT Sequence: 3. Moving Forward (1s)"));
     // runMotor(1, leftSpeed,  true);
     // runMotor(2, rightSpeed, true);
     // myDelayMs(1000);
 
-    // if (DEBUG) uart_println(">>> Sequence Complete. Stopped.");
+    // if (DEBUG) uart_println_P(PSTR(">>> Sequence Complete. Stopped."));
     // stopMotors();
 }
 
 static void warmupSensors(void) {
-    if (DEBUG) uart_println("Warming up sensors...");
+    if (DEBUG) uart_println_P(PSTR("Warming up sensors..."));
     for (int i = 0; i < 20; i++) {
         float r = getDistance(&SENSOR_RIGHT);
         float l = getDistance(&SENSOR_LEFT);
@@ -670,7 +687,7 @@ static void warmupSensors(void) {
         if (l > 0) lastDistL = l;
         myDelayMs(10);
     }
-    if (DEBUG) uart_println("Sensors ready. Send commands.");
+    if (DEBUG) uart_println_P(PSTR("Sensors ready. Send commands."));
 }
 
 // ============================================================
@@ -687,17 +704,17 @@ void setup(void) {
     sei();
 
     if (DEBUG) {
-        uart_println("--- MASTER CAR SCRIPT READY (LL) ---");
-        uart_println("'1' = Run Continuous PID | '0' = Stop");
-        uart_println("'R' = Run Right Sequence | 'L' = Run Left Sequence");
-        uart_println("'TR45' = Right Ticks to 45 | 'TL38' = Left Ticks to 38");
-        uart_println("'T40' = Set BOTH Ticks to 40");
-        uart_println("'ML120' = Left pivot turn PWM (M2) | 'MR100' = Right pivot PWM (M1)");
-        uart_println("'P2.5' = Set Kp to 2.5 | 'D15' = Set Kd to 15");
-        uart_println("'dcr0.85' = Set Right Trim | 'dcl0.88' = Set Left Trim");
-        uart_println("'F3' = Move Forward 3s | 'V100' = Base speed | 'O30' = Front stop distance (cm)");
-        uart_println("'B500' = Reverse 500ms | 'BS120' = Set back speed | 'BT500' = Set back time(ms)");
-        uart_println("'?' = Settings");
+        uart_println_P(PSTR("--- MASTER CAR SCRIPT READY (LL) ---"));
+        uart_println_P(PSTR("'1' = Run Continuous PID | '0' = Stop"));
+        uart_println_P(PSTR("'R' = Run Right Sequence | 'L' = Run Left Sequence"));
+        uart_println_P(PSTR("'TR45' = Right Ticks to 45 | 'TL38' = Left Ticks to 38"));
+        uart_println_P(PSTR("'T40' = Set BOTH Ticks to 40"));
+        uart_println_P(PSTR("'ML120' = Left pivot turn PWM (M2) | 'MR100' = Right pivot PWM (M1)"));
+        uart_println_P(PSTR("'P2.5' = Set Kp to 2.5 | 'D15' = Set Kd to 15"));
+        uart_println_P(PSTR("'dcr0.85' = Set Right Trim | 'dcl0.88' = Set Left Trim"));
+        uart_println_P(PSTR("'F3' = Move Forward 3s | 'V100' = Base speed | 'O30' = Front stop distance (cm)"));
+        uart_println_P(PSTR("'B500' = Reverse 500ms | 'BS120' = Set back speed | 'BT500' = Set back time(ms)"));
+        uart_println_P(PSTR("'?' = Settings"));
     }
     myDelayMs(3000);
 }
@@ -717,11 +734,11 @@ void loop(void) {
             lastDistR  = -1.0; lastDistL      = -1.0;
             cli(); leftTicks = 0; rightTicks = 0; sei();
             turnCount  = 0;
-            if (DEBUG) uart_println(">>> Running Continuous PID...");
+            if (DEBUG) uart_println_P(PSTR(">>> Running Continuous PID..."));
         }
         else if (cmd == '0' || cmd == 'X' || cmd == 'x') {
             isRunning = false; stopMotors();
-            if (DEBUG) uart_println(">>> Stopped.");
+            if (DEBUG) uart_println_P(PSTR(">>> Stopped."));
         }
         else if (cmd == 'R' || cmd == 'r') { isRunning = false; runSequenceRight(); }
         else if (cmd == 'L' || cmd == 'l') { isRunning = false; runSequenceLeft();  }
@@ -740,9 +757,9 @@ void loop(void) {
                 if (v > MAX_SPEED) v = MAX_SPEED;
                 BACK_SPEED = v;
                 if (DEBUG) {
-                    uart_print_str(">>> Back Speed updated to: ");
+                    uart_print_P(PSTR(">>> Back Speed updated to: "));
                     uart_print_long(BACK_SPEED);
-                    uart_println("");
+                    uart_println_P(PSTR(""));
                 }
             } else if (nextChar == 'T' || nextChar == 't') {
                 // BT<ms>: set back time for dead-end reverse
@@ -752,9 +769,9 @@ void loop(void) {
                 if (v > 5000) v = 5000;
                 BACK_TIME_MS = v;
                 if (DEBUG) {
-                    uart_print_str(">>> Back Time updated to: ");
+                    uart_print_P(PSTR(">>> Back Time updated to: "));
                     uart_print_long(BACK_TIME_MS);
-                    uart_println("ms");
+                    uart_println_P(PSTR("ms"));
                 }
             } else {
                 // B<ms>: reverse for given milliseconds
@@ -762,14 +779,14 @@ void loop(void) {
                 int ms = (int)uart_parse_long();
                 if (ms > 0) {
                     if (DEBUG) {
-                        uart_print_str(">>> Reversing for ");
+                        uart_print_P(PSTR(">>> Reversing for "));
                         uart_print_long(ms);
-                        uart_print_str("ms at PWM ");
+                        uart_print_P(PSTR("ms at PWM "));
                         uart_print_long(BACK_SPEED);
-                        uart_println("");
+                        uart_println_P(PSTR(""));
                     }
                     goBackwardMs((uint32_t)ms);
-                    if (DEBUG) uart_println(">>> Done. Stopped.");
+                    if (DEBUG) uart_println_P(PSTR(">>> Done. Stopped."));
                 }
             }
         }
@@ -789,26 +806,26 @@ void loop(void) {
                 uart_read_blocking();
                 TURN_TICKS_RIGHT = (int)uart_parse_long();
                 if (DEBUG) {
-                    uart_print_str(">>> Right Turn Ticks updated to: ");
+                    uart_print_P(PSTR(">>> Right Turn Ticks updated to: "));
                     uart_print_long(TURN_TICKS_RIGHT);
-                    uart_println("");
+                    uart_println_P(PSTR(""));
                 }
             } else if (nextChar == 'L' || nextChar == 'l') {
                 uart_read_blocking();
                 TURN_TICKS_LEFT = (int)uart_parse_long();
                 if (DEBUG) {
-                    uart_print_str(">>> Left Turn Ticks updated to: ");
+                    uart_print_P(PSTR(">>> Left Turn Ticks updated to: "));
                     uart_print_long(TURN_TICKS_LEFT);
-                    uart_println("");
+                    uart_println_P(PSTR(""));
                 }
             } else {
                 int val = (int)uart_parse_long();
                 TURN_TICKS_RIGHT = val;
                 TURN_TICKS_LEFT  = val;
                 if (DEBUG) {
-                    uart_print_str(">>> BOTH Turn Ticks updated to: ");
+                    uart_print_P(PSTR(">>> BOTH Turn Ticks updated to: "));
                     uart_print_long(val);
-                    uart_println("");
+                    uart_println_P(PSTR(""));
                 }
             }
         }
@@ -826,9 +843,9 @@ void loop(void) {
                 if (v > MAX_SPEED) v = MAX_SPEED;
                 TURN_SPEED_LEFT = v;
                 if (DEBUG) {
-                    uart_print_str(">>> Left pivot PWM (turn speed) updated to: ");
+                    uart_print_P(PSTR(">>> Left pivot PWM (turn speed) updated to: "));
                     uart_print_long(TURN_SPEED_LEFT);
-                    uart_println("");
+                    uart_println_P(PSTR(""));
                 }
             } else if (nextChar == 'R' || nextChar == 'r') {
                 uart_read_blocking();
@@ -837,9 +854,9 @@ void loop(void) {
                 if (v > MAX_SPEED) v = MAX_SPEED;
                 TURN_SPEED_RIGHT = v;
                 if (DEBUG) {
-                    uart_print_str(">>> Right pivot PWM (turn speed) updated to: ");
+                    uart_print_P(PSTR(">>> Right pivot PWM (turn speed) updated to: "));
                     uart_print_long(TURN_SPEED_RIGHT);
-                    uart_println("");
+                    uart_println_P(PSTR(""));
                 }
             }
         }
@@ -850,17 +867,17 @@ void loop(void) {
             if (v > 150) v = 150;
             STOP_DISTANCE = v;
             if (DEBUG) {
-                uart_print_str(">>> Front stop distance updated to: ");
+                uart_print_P(PSTR(">>> Front stop distance updated to: "));
                 uart_print_long(STOP_DISTANCE);
-                uart_println(" cm");
+                uart_println_P(PSTR(" cm"));
             }
         }
         else if (cmd == 'P' || cmd == 'p') {
             Kp = uart_parse_float();
             if (DEBUG) {
-                uart_print_str(">>> Kp updated to: ");
+                uart_print_P(PSTR(">>> Kp updated to: "));
                 uart_print_float(Kp, 2);
-                uart_println("");
+                uart_println_P(PSTR(""));
             }
         }
         else if (cmd == 'D' || cmd == 'd') {
@@ -873,24 +890,24 @@ void loop(void) {
                 if (thirdChar == 'R' || thirdChar == 'r') {
                     RIGHT_TRIM = uart_parse_float();
                     if (DEBUG) {
-                        uart_print_str(">>> Right Trim updated to: ");
+                        uart_print_P(PSTR(">>> Right Trim updated to: "));
                         uart_print_float(RIGHT_TRIM, 3);
-                        uart_println("");
+                        uart_println_P(PSTR(""));
                     }
                 } else if (thirdChar == 'L' || thirdChar == 'l') {
                     LEFT_TRIM = uart_parse_float();
                     if (DEBUG) {
-                        uart_print_str(">>> Left Trim updated to: ");
+                        uart_print_P(PSTR(">>> Left Trim updated to: "));
                         uart_print_float(LEFT_TRIM, 3);
-                        uart_println("");
+                        uart_println_P(PSTR(""));
                     }
                 }
             } else {
                 Kd = uart_parse_float();
                 if (DEBUG) {
-                    uart_print_str(">>> Kd updated to: ");
+                    uart_print_P(PSTR(">>> Kd updated to: "));
                     uart_print_float(Kd, 2);
-                    uart_println("");
+                    uart_println_P(PSTR(""));
                 }
             }
         }
@@ -898,26 +915,26 @@ void loop(void) {
             myDelayMs(5);
             BASE_SPEED = (int)uart_parse_long();
             if (DEBUG) {
-                uart_print_str(">>> Base Speed updated to: ");
+                uart_print_P(PSTR(">>> Base Speed updated to: "));
                 uart_print_long(BASE_SPEED);
-                uart_println("");
+                uart_println_P(PSTR(""));
             }
         }
         else if (cmd == '?') {
             if (DEBUG) {
-                uart_print_str(">>> SETTINGS -> Kp:");   uart_print_float(Kp, 2);
-                uart_print_str(" | Kd:");                uart_print_float(Kd, 2);
-                uart_print_str(" | Speed:");             uart_print_long(BASE_SPEED);
-                uart_print_str(" | Ticks Right:");       uart_print_long(TURN_TICKS_RIGHT);
-                uart_print_str(" | Ticks Left:");        uart_print_long(TURN_TICKS_LEFT);
-                uart_print_str(" | TurnPWM R:");         uart_print_long(TURN_SPEED_RIGHT);
-                uart_print_str(" L:");                   uart_print_long(TURN_SPEED_LEFT);
-                uart_print_str(" | L_Trim:");            uart_print_float(LEFT_TRIM, 3);
-                uart_print_str(" | R_Trim:");            uart_print_float(RIGHT_TRIM, 3);
-                uart_print_str(" | Stop(cm):");           uart_print_long(STOP_DISTANCE);
-                uart_print_str(" | BackPWM:");            uart_print_long(BACK_SPEED);
-                uart_print_str(" | BackMs:");             uart_print_long(BACK_TIME_MS);
-                uart_println("");
+                uart_print_P(PSTR(">>> SETTINGS -> Kp:"));   uart_print_float(Kp, 2);
+                uart_print_P(PSTR(" | Kd:"));                uart_print_float(Kd, 2);
+                uart_print_P(PSTR(" | Speed:"));             uart_print_long(BASE_SPEED);
+                uart_print_P(PSTR(" | Ticks Right:"));       uart_print_long(TURN_TICKS_RIGHT);
+                uart_print_P(PSTR(" | Ticks Left:"));        uart_print_long(TURN_TICKS_LEFT);
+                uart_print_P(PSTR(" | TurnPWM R:"));         uart_print_long(TURN_SPEED_RIGHT);
+                uart_print_P(PSTR(" L:"));                   uart_print_long(TURN_SPEED_LEFT);
+                uart_print_P(PSTR(" | L_Trim:"));            uart_print_float(LEFT_TRIM, 3);
+                uart_print_P(PSTR(" | R_Trim:"));            uart_print_float(RIGHT_TRIM, 3);
+                uart_print_P(PSTR(" | Stop(cm):"));           uart_print_long(STOP_DISTANCE);
+                uart_print_P(PSTR(" | BackPWM:"));            uart_print_long(BACK_SPEED);
+                uart_print_P(PSTR(" | BackMs:"));             uart_print_long(BACK_TIME_MS);
+                uart_println_P(PSTR(""));
             }
         }
     }
@@ -958,20 +975,20 @@ void loop(void) {
         } else {
             bool inDeadRange = (freshFront > 0 && freshFront < DEAD_DISTANCE);
             if (!inDeadRange) {
-                if (DEBUG) uart_println(">>> Stop+blocked, not dead range; resume PID.");
+                if (DEBUG) uart_println_P(PSTR(">>> Stop+blocked, not dead range; resume PID."));
                 return;
             }
             if (!deadReverseTrialUsed) {
                 if (DEBUG) {
-                    uart_print_str(">>> Dead range: reverse ");
+                    uart_print_P(PSTR(">>> Dead range: reverse "));
                     uart_print_long(BACK_TIME_MS);
-                    uart_println("ms.");
+                    uart_println_P(PSTR("ms."));
                 }
                 goBackwardMs((uint32_t)BACK_TIME_MS);
                 deadReverseTrialUsed = true;
                 return;
             }
-            if (DEBUG) uart_println("Dead end! Stopping.");
+            if (DEBUG) uart_println_P(PSTR("Dead end! Stopping."));
             isRunning = false;
             stopMotors();
             printDeadEndReport();   // ALWAYS printed, regardless of DEBUG
@@ -1005,16 +1022,16 @@ void loop(void) {
 
     // 5. Debug print (gated)
     if (DEBUG) {
-        uart_print_str("F: ");        uart_print_float(distFront, 2);
-        uart_print_str(" | L: ");     uart_print_float(distLeft,  2);
-        uart_print_str(" | R: ");     uart_print_float(distRight, 2);
-        uart_print_str(" | Err: ");   uart_print_float(error,     2);
-        uart_print_str(" | Corr: ");  uart_print_float(correction,2);
-        uart_print_str(" | L_PWM: "); uart_print_long(leftMotorSpeed);
-        uart_print_str(" | R_PWM: "); uart_print_long(rightMotorSpeed);
-        uart_print_str(" | L_Tick: ");uart_print_ulong(leftTicks);
-        uart_print_str(" | R_Tick: ");uart_print_ulong(rightTicks);
-        uart_println("");
+        uart_print_P(PSTR("F: "));        uart_print_float(distFront, 2);
+        uart_print_P(PSTR(" | L: "));     uart_print_float(distLeft,  2);
+        uart_print_P(PSTR(" | R: "));     uart_print_float(distRight, 2);
+        uart_print_P(PSTR(" | Err: "));   uart_print_float(error,     2);
+        uart_print_P(PSTR(" | Corr: "));  uart_print_float(correction,2);
+        uart_print_P(PSTR(" | L_PWM: ")); uart_print_long(leftMotorSpeed);
+        uart_print_P(PSTR(" | R_PWM: ")); uart_print_long(rightMotorSpeed);
+        uart_print_P(PSTR(" | L_Tick: "));uart_print_ulong(leftTicks);
+        uart_print_P(PSTR(" | R_Tick: "));uart_print_ulong(rightTicks);
+        uart_println_P(PSTR(""));
     }
 
     // 6. Drive motors
