@@ -10,7 +10,7 @@
 
 #include <avr/io.h>
 #include <avr/interrupt.h>
-#include <util/delay.h>
+// No <util/delay.h> — all timing is timer-managed (Timer0 CTC + Timer1 TCNT1L).
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -144,10 +144,58 @@ static uint32_t myMicros(void) {
     return ((ovf << 8) + cnt) * 4UL;
 }
 
-// Runtime millisecond delay, busy-wait via _delay_ms(1).
-// Mirrors the blocking semantics of the HL delay().
+// ============================================================
+// --- TIMER0: SYSTEM MILLISECOND CLOCK (CTC mode) ---
+// ============================================================
+// CTC mode (WGM01): counter counts 0 -> OCR0A -> auto-reset -> 0
+// Prescaler 64: tick = 64 / 16 MHz = 4 us
+// OCR0A = 249: (249 + 1) * 4 us = 1000 us = 1 ms per compare match
+//
+// Pin note: OC0A (PD6) and OC0B (PD5) are NOT connected to the
+// timer output (COM0A1:0 = 00, COM0B1:0 = 00), so PD5/PD6 remain
+// normal GPIO (Trig Front / Echo Right). No pin conflict.
+// ============================================================
+volatile uint32_t sys_millis = 0;
+
+ISR(TIMER0_COMPA_vect) {
+    sys_millis++;
+}
+
+static uint32_t myMillis(void) {
+    uint32_t ms;
+    uint8_t sreg = SREG;
+    cli();              // disable interrupts for atomic 4-byte read
+    ms = sys_millis;
+    SREG = sreg;        // restore interrupt state
+    return ms;
+}
+
+static void timer0_init(void) {
+    TCCR0A = (1 << WGM01);                  // CTC mode (clear on compare match)
+    TCCR0B = (1 << CS01) | (1 << CS00);      // prescaler 64
+    OCR0A  = 249;                             // compare match every 1 ms
+    TIMSK0 = (1 << OCIE0A);                   // enable compare match A interrupt
+}
+
+// Millisecond delay using Timer0's sys_millis (CTC interrupt).
+// Busy-waits by polling the timer-driven counter.
 static void myDelayMs(uint32_t ms) {
-    while (ms--) _delay_ms(1);
+    uint32_t start = myMillis();
+    while (myMillis() - start < ms) { }
+}
+
+// ============================================================
+// --- MICROSECOND DELAY (Timer1 tick-based) ---
+// ============================================================
+// Timer1 prescaler = 64, so each TCNT1L tick = 4 us.
+// Reads the timer counter register directly to busy-wait.
+// Resolution: 4 us (rounds up). Max: 1020 us.
+// ============================================================
+static void myDelayUs(uint16_t us) {
+    uint8_t ticks = (uint8_t)((us + 3) / 4);   // round up to next 4us
+    if (ticks == 0) ticks = 1;                  // minimum 1 tick = 4 us
+    uint8_t start = TCNT1L;                     // snapshot current counter
+    while ((uint8_t)(TCNT1L - start) < ticks) { }
 }
 
 // pulseIn replacement (timeout in microseconds).
@@ -427,9 +475,9 @@ ISR(INT1_vect) {  // ENCODER_LEFT (PD3)
 // ============================================================
 static float getDistance(const UltrasonicSensor* s) {
     *(s->trigPort) &= ~(1 << s->trigBit);
-    _delay_us(2);
+    myDelayUs(2);                               // 4 us (1 tick, >= 2 us required)
     *(s->trigPort) |=  (1 << s->trigBit);
-    _delay_us(10);
+    myDelayUs(10);                              // 12 us (3 ticks, >= 10 us per HC-SR04 spec)
     *(s->trigPort) &= ~(1 << s->trigBit);
 
     uint32_t duration = myPulseIn(s->echoPin, (1 << s->echoBit), 30000UL);
@@ -519,7 +567,7 @@ static void goBackwardMs(uint32_t ms) {
     if (r < 1) r = 1;
     runMotor(1, l, false);
     runMotor(2, r, false);
-    _delay_us(200);
+    myDelayUs(200);                             // 200 us (50 ticks) -- motor direction settle
     uint32_t end = myMicros() + ms * 1000UL;
     while ((int32_t)(end - myMicros()) > 0) { }
     stopMotors();
@@ -632,6 +680,7 @@ void setup(void) {
     cli();
     gpio_init();
     uart_init();
+    timer0_init();      // System ms clock (CTC mode, 1ms COMPA interrupt)
     timer1_init();      // PWM for M2 + free-running counter for myMicros
     timer2_init();      // PWM for M1
     encoders_init();
