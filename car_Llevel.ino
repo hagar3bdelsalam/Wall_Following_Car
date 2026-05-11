@@ -77,19 +77,19 @@ uint8_t turnCount = 0;
 // ============================================================
 // --- LIVE TUNABLE VARIABLES (same defaults as HL) ---
 // ============================================================
-int   BASE_SPEED       = 100;
-float Kp               = 0.3;//0.5;
+int   BASE_SPEED       = 110;
+float Kp               = 0.5; //0.35;
 float Ki               = 0.0;
-float Kd               = 3.5;//5.0;
-int   TURN_TICKS_RIGHT = 25;
+float Kd               = 5.0; //3.5;
+int   TURN_TICKS_RIGHT = 27; //25;
 int   TURN_TICKS_LEFT  = 40;
-float LEFT_TRIM        = 0.87;
+float LEFT_TRIM        = 0.9; //0.87;
 float RIGHT_TRIM       = 1.0;
 int   TURN_SPEED_RIGHT = 100;  // pivot turn: left wheel PWM (M1) when turning right
 int   TURN_SPEED_LEFT  = 113;  // pivot turn: right wheel PWM (M2) when turning left (tune via ML)
 int   STOP_DISTANCE    = 30;   // front obstacle: trigger turn/stop below this (cm); tune via O
-int   BACK_SPEED       = 100;  // reverse PWM (both wheels); tune via BS
-int   BACK_TIME_MS     = 1000; // reverse duration in ms for dead-end escape; tune via BT
+int   BACK_SPEED       = 200;  // reverse PWM (both wheels); tune via BS
+int   BACK_TIME_MS     = 300; // reverse duration in ms for dead-end escape; tune via BT
 
 // ============================================================
 // --- HARDWARE SETTINGS ---
@@ -97,10 +97,11 @@ int   BACK_TIME_MS     = 1000; // reverse duration in ms for dead-end escape; tu
 const int   MAX_SPEED            = 200;
 const int   MIN_SPEED            = 0;
 const float TARGET_CENTER        = 15.0;
-const int   DEAD_DISTANCE        = 20;   // stricter than STOP; front must be closer to count as dead band
+const int   DEAD_DISTANCE        = 15;   // stricter than STOP; front must be closer to count as dead band
+const int   RESET_DEAD_TRIAL_DISTANCE = 50; // reset dead trial if front is this far away
 const float SPEED_OF_SOUND       = 0.0343;
-const float RIGHT_WALL_THRESHOLD = 30.0;
-const float LEFT_WALL_THRESHOLD  = 30.0;
+const float RIGHT_WALL_THRESHOLD = 40.0;
+const float LEFT_WALL_THRESHOLD  = 40.0;
 const float THRESHOLD_DIST       = 50.0;
 const unsigned long DEBOUNCE_TIME = 500UL;   // microseconds
 
@@ -1057,14 +1058,14 @@ void loop(void) {
     float distLeft  = us_last_cm[1];
     float distFront = us_last_cm[2];
 
-    if (distFront > 0 && distFront >= STOP_DISTANCE) {
+    if (distFront > 0 && distFront >= RESET_DEAD_TRIAL_DISTANCE) {
         deadReverseTrialUsed = false;
     }
 
     // 3. Front obstacle avoidance (triggers pivot turns)
+    // Do not stopMotors() before we know the branch: "resume PID" needs motors still running
+    // while ultrasonics refresh; turns/reverse/dead-end stop locally where needed.
     if (distFront > 0 && distFront < STOP_DISTANCE) {
-        stopMotors();
-        myDelayMs(100);
         uint32_t mark = myMillis();
         while ((uint32_t)(myMillis() - mark) < 350u) {
             ultrasonic_service();
@@ -1083,31 +1084,36 @@ void loop(void) {
         if (rightOpen) {
             deadReverseTrialUsed = false;
             turnRight90();
-        } else if (leftOpen) {
+            return;
+        }
+        if (leftOpen) {
             deadReverseTrialUsed = false;
             turnLeft90();
+            return;
+        }
+
+        bool inDeadRange = (freshFront > 0 && freshFront < DEAD_DISTANCE);
+        if (!inDeadRange) {
+            if (DEBUG) uart_println_P(PSTR(">>> Stop+blocked, not dead range; resume PID."));
+            /* Fall through to PID below — do not return. */
+        } else if (!deadReverseTrialUsed) {
+            stopMotors();
+            myDelayMs(100);
+            if (DEBUG) {
+                uart_print_P(PSTR(">>> Dead range: reverse "));
+                uart_print_long(BACK_TIME_MS);
+                uart_println_P(PSTR("ms."));
+            }
+            goBackwardMs((uint32_t)BACK_TIME_MS);
+            deadReverseTrialUsed = true;
+            return;
         } else {
-            bool inDeadRange = (freshFront > 0 && freshFront < DEAD_DISTANCE);
-            if (!inDeadRange) {
-                if (DEBUG) uart_println_P(PSTR(">>> Stop+blocked, not dead range; resume PID."));
-                return;
-            }
-            if (!deadReverseTrialUsed) {
-                if (DEBUG) {
-                    uart_print_P(PSTR(">>> Dead range: reverse "));
-                    uart_print_long(BACK_TIME_MS);
-                    uart_println_P(PSTR("ms."));
-                }
-                goBackwardMs((uint32_t)BACK_TIME_MS);
-                deadReverseTrialUsed = true;
-                return;
-            }
             if (DEBUG) uart_println_P(PSTR("Dead end! Stopping."));
             isRunning = false;
             stopMotors();
             printDeadEndReport();   // ALWAYS printed, regardless of DEBUG
+            return;
         }
-        return;
     }
 
     // 4. PID center tracking
