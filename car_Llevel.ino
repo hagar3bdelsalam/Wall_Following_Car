@@ -10,7 +10,7 @@
 
 #include <avr/io.h>
 #include <avr/interrupt.h>
-// No <util/delay.h> — all timing is timer-managed (Timer0 CTC + Timer1 TCNT1L).
+// No <util/delay.h> — timing: Timer0 ms, Timer1 PWM + myMicros, async ultrasonic FSM.
 #include <avr/pgmspace.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -53,7 +53,7 @@
 #define ENC_RIGHT_BIT   PD2
 #define ENC_LEFT_BIT    PD3
 
-// Sensor descriptor (used by getDistance)
+// Sensor descriptor (async ultrasonic driver)
 typedef struct {
     volatile uint8_t* trigPort;
     volatile uint8_t* echoPin;
@@ -173,55 +173,33 @@ static uint32_t myMillis(void) {
 
 static void timer0_init(void) {
     TCCR0A = (1 << WGM01);                  // CTC mode (clear on compare match)
+    TCCR0A &= (uint8_t)~((1 << COM0A1) | (1 << COM0A0) | (1 << COM0B1) | (1 << COM0B0));
     TCCR0B = (1 << CS01) | (1 << CS00);      // prescaler 64
     OCR0A  = 249;                             // compare match every 1 ms
     TIMSK0 = (1 << OCIE0A);                   // enable compare match A interrupt
 }
 
+static void ultrasonic_service(void);
+
 // Millisecond delay using Timer0's sys_millis (CTC interrupt).
-// Busy-waits by polling the timer-driven counter.
+// Keeps async ultrasonic FSM advancing while waiting.
 static void myDelayMs(uint32_t ms) {
     uint32_t start = myMillis();
-    while (myMillis() - start < ms) { }
+    while (myMillis() - start < ms) {
+        ultrasonic_service();
+    }
 }
 
-// ============================================================
-// --- MICROSECOND DELAY (Timer1 tick-based) ---
-// ============================================================
-// Timer1 prescaler = 64, so each TCNT1L tick = 4 us.
-// Reads the timer counter register directly to busy-wait.
-// Resolution: 4 us (rounds up). Max: 1020 us.
-// ============================================================
-static void myDelayUs(uint16_t us) {
-    uint8_t ticks = (uint8_t)((us + 3) / 4);   // round up to next 4us
-    if (ticks == 0) ticks = 1;                  // minimum 1 tick = 4 us
-    uint8_t start = TCNT1L;                     // snapshot current counter
-    while ((uint8_t)(TCNT1L - start) < ticks) { }
+// Short blocking delay (motor direction settle), uses myMicros — not TCNT1L spin.
+static void delayUsMyMicros(uint16_t us) {
+    uint32_t t0 = myMicros();
+    while ((uint32_t)(myMicros() - t0) < (uint32_t)us) { }
 }
 
-// pulseIn replacement (timeout in microseconds).
-static uint32_t myPulseIn(volatile uint8_t* pinReg, uint8_t bitMask, uint32_t timeout_us) {
-    uint32_t start = myMicros();
-
-    // 1) wait for any prior pulse to end (echo LOW).
-    while (*pinReg & bitMask) {
-        if (myMicros() - start > timeout_us) return 0;
-    }
-    // 2) wait for pulse to begin (echo HIGH).
-    while (!(*pinReg & bitMask)) {
-        if (myMicros() - start > timeout_us) return 0;
-    }
-    uint32_t pulseStart = myMicros();
-    // 3) wait for pulse to end (echo LOW).
-    while (*pinReg & bitMask) {
-        if (myMicros() - pulseStart > timeout_us) return 0;
-    }
-    return myMicros() - pulseStart;
-}
 
 // ============================================================
 // --- UART (USART0 @ 9600 8N1; pins D0/D1 -> HC-05) ---
-// RX ISR ring: HW FIFO is 2 bytes; blocking ultrasonic reads can overrun RX
+// RX ISR ring: HW FIFO is 2 bytes; long blocking without servicing RX can overrun
 // and drop multi-byte commands (V100->1, TR50 mis-parsed) while D7 still works.
 // ============================================================
 #define UART_BAUD   9600UL
@@ -488,18 +466,144 @@ ISR(INT1_vect) {  // ENCODER_LEFT (PD3)
 }
 
 // ============================================================
-// --- ULTRASONIC ---
+// --- ULTRASONIC (async round-robin, non-blocking FSM) ---
 // ============================================================
-static float getDistance(const UltrasonicSensor* s) {
-    *(s->trigPort) &= ~(1 << s->trigBit);
-    myDelayUs(2);                               // 4 us (1 tick, >= 2 us required)
-    *(s->trigPort) |=  (1 << s->trigBit);
-    myDelayUs(10);                              // 12 us (3 ticks, >= 10 us per HC-SR04 spec)
-    *(s->trigPort) &= ~(1 << s->trigBit);
+#define US_NUM_CH           3u
+#define US_COOLDOWN_MS      20u
+#define US_ECHO_TIMEOUT_US  30000UL
 
-    uint32_t duration = myPulseIn(s->echoPin, (1 << s->echoBit), 30000UL);
-    if (duration == 0) return 0.0f;
-    return duration * SPEED_OF_SOUND / 2.0f;
+typedef enum {
+    USM_IDLE = 0,
+    USM_TRIG_LOW_HOLD,
+    USM_TRIG_HIGH_HOLD,
+    USM_WAIT_ECHO_PRELOW,
+    USM_WAIT_ECHO_HIGH,
+    USM_WAIT_ECHO_FALL
+} usm_phase_t;
+
+static usm_phase_t     usm_phase        = USM_IDLE;
+static uint8_t         usm_rr           = 0;   // next preferred channel index
+static uint8_t         usm_active_ch    = 0;
+static const UltrasonicSensor* usm_cfg  = 0;
+static uint8_t         usm_echo_mask    = 0;
+static uint32_t        usm_sub_deadline = 0;
+static uint32_t        usm_t_listen      = 0;
+static uint32_t        usm_pulse_start   = 0;
+
+static float           us_last_cm[US_NUM_CH];
+static uint32_t        us_last_sample_ms[US_NUM_CH];
+static uint32_t        us_next_fire_ms[US_NUM_CH];
+
+static const UltrasonicSensor* us_sensor_for_ch(uint8_t ch) {
+    if (ch == 0) return &SENSOR_RIGHT;
+    if (ch == 1) return &SENSOR_LEFT;
+    return &SENSOR_FRONT;
+}
+
+static void ultrasonic_init(void) {
+    usm_phase = USM_IDLE;
+    usm_rr    = 0;
+    usm_cfg   = 0;
+    for (uint8_t i = 0; i < US_NUM_CH; i++) {
+        us_last_cm[i]         = 0.0f;
+        us_last_sample_ms[i]  = 0;
+        us_next_fire_ms[i]    = 0;
+    }
+}
+
+static void usm_complete(uint8_t ch, float cm) {
+    us_last_cm[ch]        = cm;
+    us_last_sample_ms[ch] = myMillis();
+    us_next_fire_ms[ch]   = myMillis() + US_COOLDOWN_MS;
+    usm_rr = (uint8_t)((ch + 1u) % US_NUM_CH);
+    usm_phase     = USM_IDLE;
+    usm_cfg       = 0;
+}
+
+static void usm_try_start(void) {
+    for (uint8_t k = 0; k < US_NUM_CH; k++) {
+        uint8_t ch = (uint8_t)((usm_rr + k) % US_NUM_CH);
+        if ((int32_t)(myMillis() - us_next_fire_ms[ch]) < 0)
+            continue;
+        usm_active_ch = ch;
+        usm_cfg       = us_sensor_for_ch(ch);
+        usm_echo_mask = (uint8_t)(1u << usm_cfg->echoBit);
+        *(usm_cfg->trigPort) &= ~(1 << usm_cfg->trigBit);
+        usm_phase        = USM_TRIG_LOW_HOLD;
+        usm_sub_deadline = myMicros() + 2UL;
+        return;
+    }
+}
+
+static void ultrasonic_service(void) {
+    switch (usm_phase) {
+    case USM_IDLE:
+        usm_try_start();
+        return;
+
+    case USM_TRIG_LOW_HOLD: {
+        if ((int32_t)(myMicros() - usm_sub_deadline) < 0)
+            return;
+        *(usm_cfg->trigPort) |= (1 << usm_cfg->trigBit);
+        usm_phase        = USM_TRIG_HIGH_HOLD;
+        usm_sub_deadline = myMicros() + 10UL;
+        return;
+    }
+
+    case USM_TRIG_HIGH_HOLD: {
+        if ((int32_t)(myMicros() - usm_sub_deadline) < 0)
+            return;
+        *(usm_cfg->trigPort) &= ~(1 << usm_cfg->trigBit);
+        usm_phase     = USM_WAIT_ECHO_PRELOW;
+        usm_t_listen  = myMicros();
+        return;
+    }
+
+    case USM_WAIT_ECHO_PRELOW: {
+        volatile uint8_t* echoPin = usm_cfg->echoPin;
+        if ((*echoPin & usm_echo_mask) != 0) {
+            if (myMicros() - usm_t_listen > US_ECHO_TIMEOUT_US) {
+                usm_complete(usm_active_ch, 0.0f);
+            }
+            return;
+        }
+        usm_phase    = USM_WAIT_ECHO_HIGH;
+        usm_t_listen = myMicros();
+        return;
+    }
+
+    case USM_WAIT_ECHO_HIGH: {
+        volatile uint8_t* echoPin = usm_cfg->echoPin;
+        if ((*echoPin & usm_echo_mask) == 0) {
+            if (myMicros() - usm_t_listen > US_ECHO_TIMEOUT_US) {
+                usm_complete(usm_active_ch, 0.0f);
+            }
+            return;
+        }
+        usm_pulse_start = myMicros();
+        usm_phase       = USM_WAIT_ECHO_FALL;
+        return;
+    }
+
+    case USM_WAIT_ECHO_FALL: {
+        volatile uint8_t* echoPin = usm_cfg->echoPin;
+        if ((*echoPin & usm_echo_mask) != 0) {
+            if (myMicros() - usm_pulse_start > US_ECHO_TIMEOUT_US) {
+                usm_complete(usm_active_ch, 0.0f);
+            }
+            return;
+        }
+        uint32_t dur = myMicros() - usm_pulse_start;
+        float    cm  = (dur == 0u) ? 0.0f : (float)dur * SPEED_OF_SOUND / 2.0f;
+        usm_complete(usm_active_ch, cm);
+        return;
+    }
+
+    default:
+        usm_phase = USM_IDLE;
+        usm_cfg   = 0;
+        return;
+    }
 }
 
 // ============================================================
@@ -584,9 +688,11 @@ static void goBackwardMs(uint32_t ms) {
     if (r < 1) r = 1;
     runMotor(1, l, false);
     runMotor(2, r, false);
-    myDelayUs(200);                             // 200 us (50 ticks) -- motor direction settle
+    delayUsMyMicros(200);
     uint32_t end = myMicros() + ms * 1000UL;
-    while ((int32_t)(end - myMicros()) > 0) { }
+    while ((int32_t)(end - myMicros()) > 0) {
+        ultrasonic_service();
+    }
     stopMotors();
 }
 
@@ -681,10 +787,8 @@ static void runSequenceLeft(void) {
 static void warmupSensors(void) {
     if (DEBUG) uart_println_P(PSTR("Warming up sensors..."));
     for (int i = 0; i < 20; i++) {
-        float r = getDistance(&SENSOR_RIGHT);
-        float l = getDistance(&SENSOR_LEFT);
-        if (r > 0) lastDistR = r;
-        if (l > 0) lastDistL = l;
+        if (us_last_cm[0] > 0.0f) lastDistR = us_last_cm[0];
+        if (us_last_cm[1] > 0.0f) lastDistL = us_last_cm[1];
         myDelayMs(10);
     }
     if (DEBUG) uart_println_P(PSTR("Sensors ready. Send commands."));
@@ -700,6 +804,7 @@ void setup(void) {
     timer0_init();      // System ms clock (CTC mode, 1ms COMPA interrupt)
     timer1_init();      // PWM for M2 + free-running counter for myMicros
     timer2_init();      // PWM for M1
+    ultrasonic_init();
     encoders_init();
     sei();
 
@@ -947,10 +1052,10 @@ void loop(void) {
 
     if (!warmupDone) { warmupSensors(); warmupDone = true; }
 
-    // 2. Read sensors
-    float distRight = getDistance(&SENSOR_RIGHT);
-    float distLeft  = getDistance(&SENSOR_LEFT);
-    float distFront = getDistance(&SENSOR_FRONT);
+    // 2. Read sensors (last completed round-robin samples)
+    float distRight = us_last_cm[0];
+    float distLeft  = us_last_cm[1];
+    float distFront = us_last_cm[2];
 
     if (distFront > 0 && distFront >= STOP_DISTANCE) {
         deadReverseTrialUsed = false;
@@ -958,10 +1063,19 @@ void loop(void) {
 
     // 3. Front obstacle avoidance (triggers pivot turns)
     if (distFront > 0 && distFront < STOP_DISTANCE) {
-        stopMotors(); myDelayMs(100);
-        float freshRight = getDistance(&SENSOR_RIGHT);
-        float freshLeft  = getDistance(&SENSOR_LEFT);
-        float freshFront = getDistance(&SENSOR_FRONT);
+        stopMotors();
+        myDelayMs(100);
+        uint32_t mark = myMillis();
+        while ((uint32_t)(myMillis() - mark) < 350u) {
+            ultrasonic_service();
+            if (us_last_sample_ms[0] >= mark && us_last_sample_ms[1] >= mark
+                && us_last_sample_ms[2] >= mark) {
+                break;
+            }
+        }
+        float freshRight = us_last_cm[0];
+        float freshLeft  = us_last_cm[1];
+        float freshFront = us_last_cm[2];
 
         bool rightOpen = (freshRight <= 0 || freshRight > RIGHT_WALL_THRESHOLD);
         bool leftOpen  = (freshLeft  <= 0 || freshLeft  > LEFT_WALL_THRESHOLD);
