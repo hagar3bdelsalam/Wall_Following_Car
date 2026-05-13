@@ -1,6 +1,5 @@
-// ============================================================
-// --- PINS ---
-// ============================================================
+
+//  PINS 
 const int M2_EN  = 10;
 const int M2_IN1 = 9;
 const int M2_IN2 = 8;
@@ -16,9 +15,7 @@ const int TRIG_LEFT  = A4; const int ECHO_LEFT  = A5;
 const int ENCODER_LEFT  = 3;
 const int ENCODER_RIGHT = 2;
 
-// ============================================================
-// --- LIVE TUNABLE VARIABLES ---
-// ============================================================
+//  LIVE TUNABLE VARIABLES 
 int BASE_SPEED = 120; 
 float Kp = 2.0;       
 float Ki = 0.0;
@@ -31,9 +28,7 @@ int TURN_TICKS_LEFT  = 30;
 float LEFT_TRIM  = 0.84; //0.885
 float RIGHT_TRIM = 0.865; // 0.84
 
-// ============================================================
-// --- HARDWARE SETTINGS ---
-// ============================================================
+//  HARDWARE SETTINGS 
 const int MAX_SPEED  = 200;
 const int MIN_SPEED  = 0;
 
@@ -45,9 +40,7 @@ const float RIGHT_WALL_THRESHOLD = 30.0;
 const float LEFT_WALL_THRESHOLD  = 30.0;
 const int TURN_SPEED = 100;
 
-// ============================================================
-// --- STATE & SENSOR VARIABLES ---
-// ============================================================
+//  STATE & SENSOR VARIABLES 
 float previous_error = 0;
 float integral       = 0;
 
@@ -64,9 +57,7 @@ volatile unsigned long lastLeftMicros  = 0;
 volatile unsigned long lastRightMicros = 0;
 const unsigned long DEBOUNCE_TIME = 500; // 500 microseconds to stop jitter
 
-// ============================================================
-// --- INTERRUPTS (DEBOUNCED) ---
-// ============================================================
+//  INTERRUPTS (DEBOUNCED) 
 void countLeft() {
     unsigned long now = micros();
     if (now - lastLeftMicros > DEBOUNCE_TIME) {
@@ -83,9 +74,7 @@ void countRight() {
     }
 }
 
-// ============================================================
-// --- MOVEMENT SEQUENCES & TURNS ---
-// ============================================================
+//  MOVEMENT SEQUENCES & TURNS 
 void goForward(int seconds) {
     Serial.print(">>> Moving Forward for "); Serial.print(seconds); Serial.println("s.");
     runMotor(1, (int)(BASE_SPEED * LEFT_TRIM), true);
@@ -184,9 +173,7 @@ void warmupSensors() {
     Serial.println("Sensors ready. Send commands.");
 }
 
-// ============================================================
-// --- SETUP ---
-// ============================================================
+//  SETUP 
 void setup() {
     Serial.begin(9600);
 
@@ -202,7 +189,7 @@ void setup() {
     attachInterrupt(digitalPinToInterrupt(ENCODER_LEFT),  countLeft,  CHANGE);
     attachInterrupt(digitalPinToInterrupt(ENCODER_RIGHT), countRight, CHANGE);
 
-    Serial.println("--- MASTER CAR SCRIPT READY ---");
+    Serial.println(" MASTER CAR SCRIPT READY ");
     Serial.println("'1' = Run Continuous PID | '0' = Stop");
     Serial.println("'R' = Run Right Sequence | 'L' = Run Left Sequence");
     Serial.println("'TR45' = Right Ticks to 45 | 'TL38' = Left Ticks to 38");
@@ -213,9 +200,7 @@ void setup() {
     delay(3000);
 }
 
-// ============================================================
-// --- MAIN LOOP ---
-// ============================================================
+//  MAIN LOOP 
 void loop() {
 
     // 1. Serial commands
@@ -377,9 +362,7 @@ void loop() {
     delay(50);
 }
 
-// ============================================================
-// --- HELPERS ---
-// ============================================================
+//  HELPERS 
 float getDistance(int trigPin, int echoPin) {
     digitalWrite(trigPin, LOW); delayMicroseconds(2);
     digitalWrite(trigPin, HIGH); delayMicroseconds(10);
