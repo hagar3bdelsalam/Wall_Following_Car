@@ -1,6 +1,6 @@
-# Wall-Following Robot (ATmega328P Bare-Metal Firmware)
+<h1 align ="center"> <img src="https://i.postimg.cc/m2Bgn3XD/ai.png" width="36" /> &nbsp;  Wall-Following Robot &nbsp; <img src="https://i.postimg.cc/m2Bgn3XD/ai.png" width="36" /> </h1>
 
-## Project Overview
+## <img src="https://i.postimg.cc/L628WkCY/document.png" width="21" /> Project Overview
 
 A modular, production-grade embedded firmware for an autonomous wall-following robot based on the Arduino Uno (ATmega328P). The robot uses ultrasonic sensors to maintain a target distance from a wall while navigating around obstacles.
 
@@ -15,7 +15,7 @@ A modular, production-grade embedded firmware for an autonomous wall-following r
 
 ---
 
-## Mechanical Design
+## <img src="https://i.postimg.cc/CLSx2CPj/layout.png" width="21" /> Mechanical Design
 
 <p align="center">
   <img src="wall-following-car/docs/mech-design.png" alt="Mechanical Design - Wall-Following Robot" width="500"/>
@@ -30,7 +30,7 @@ The robot features a compact differential-drive configuration with:
 
 ---
 
-## System Architecture
+## <img src="https://i.postimg.cc/bNpw50CS/folder.png" width="21" /> System Architecture
 
 This refactored firmware divides functionality into seven independent modules:
 
@@ -105,7 +105,7 @@ wall-following-car/
 
 ---
 
-## Hardware Mapping
+## <img src="https://i.postimg.cc/c40Lz797/motherboard.png" width="21" /> Hardware Mapping
 
 ### Microcontroller: ATmega328P (16 MHz)
 
@@ -153,7 +153,7 @@ Flow:       None (Ring buffer RX capacity: 64 bytes)
 
 ---
 
-## Finite State Machine (FSM)
+## <img src="https://i.postimg.cc/WbT1ymWk/fsm.png" width="21" /> Finite State Machine (FSM)
 
 ```mermaid
 stateDiagram-v2
@@ -195,7 +195,7 @@ stateDiagram-v2
 
 ---
 
-## Control Logic
+## <img src="https://i.postimg.cc/YqMCPNnj/control-panel.png" width="21" /> Control Logic
 
 ### 1. Wall Following (PID Controller)
 
@@ -265,7 +265,7 @@ When both sides are closed AND distance < 15 cm:
 
 ---
 
-## Serial Command Interface
+## <img src="https://i.postimg.cc/gks2bwQ6/wifi-signal.png" width="21" /> Serial Command Interface
 
 Commands are parsed character-by-character with 2-second inter-byte timeout (Bluetooth latency).
 
@@ -294,7 +294,7 @@ Parsed as:    Kp = 1.5
 
 ---
 
-## System Flow (Main Loop)
+## <img src="https://i.postimg.cc/TYf3sj7q/reload.png" width="21" /> System Flow (Main Loop)
 
 ### Initialization (`setup()`)
 
@@ -367,7 +367,7 @@ while (true) {
 
 ---
 
-## Compiling & Uploading
+## <img src="https://i.postimg.cc/NfDjvyS2/upload.png" width="21" /> Compiling & Uploading
 
 ### Arduino IDE
 
@@ -392,7 +392,7 @@ avrdude -p atmega328p -c usbasp -e -U flash:w:firmware.hex
 
 ---
 
-## Tuning Guide
+## <img src="https://i.postimg.cc/7YwZR1sn/tuning.png" width="21" /> Tuning Guide
 
 ### Wall Centering (PID Gains)
 
@@ -436,7 +436,7 @@ avrdude -p atmega328p -c usbasp -e -U flash:w:firmware.hex
 
 ---
 
-## Module Reference
+## <img src="https://i.postimg.cc/m2Bgn3Xt/cubes.png" width="21" /> Module Reference
 
 ### `timing.c/h`
 - **ISR(TIMER1_OVF_vect)**: Free-running 1024 µs counter
@@ -465,7 +465,7 @@ avrdude -p atmega328p -c usbasp -e -U flash:w:firmware.hex
 
 ---
 
-## Known Limitations & Future Work
+## <img src="https://i.postimg.cc/3JYxqjSy/fast-forward.png" width="21" /> Known Limitations & Future Work
 
 1. **No IMU**: Relies on encoder ticks alone (no gyro correction)
 2. **No velocity profile**: Constant max speed (no ramp-up/down)
