@@ -472,3 +472,15 @@ avrdude -p atmega328p -c usbasp -e -U flash:w:firmware.hex
 3. **No path memory**: Cannot backtrack to unexplored corridors
 4. **Sensor aliases**: All three distance reads sequential (not parallel)
 
+## <img src="https://i.postimg.cc/3rLr1DFx/team.png" width="21" /> Contributors
+
+## Contributors
+
+| Avatar | Name | Username |
+|--------|------|--------|
+| <img src="https://avatars.githubusercontent.com/MarioRaafat?v=4" width="60" height="60" style="border-radius:50%"> | Mario Raafat | [@MarioRaafat](https://github.com/MarioRaafat) |
+| <img src="https://avatars.githubusercontent.com/kerolos-mohsen?v=4" width="60" height="60" style="border-radius:50%"> | kerolos Mohsen | [@kerolos-mohsen](https://github.com/kerolos-mohsen) |
+| <img src="https://avatars.githubusercontent.com/hagar3bdelsalam?v=4" width="60" height="60" style="border-radius:50%"> | Hagar Abdelsalam | [@hagar3bdelsalam](https://github.com/hagar3bdelsalam) |
+| <img src="https://avatars.githubusercontent.com/alyaa242?v=4" width="60" height="60" style="border-radius:50%"> | Alyaa Ali | [@alyaa242](https://github.com/alyaa242) |
+| <img src="https://avatars.githubusercontent.com/AmiraKhalid04?v=4" width="60" height="60" style="border-radius:50%"> | Amira Khalid | [@AmiraKhalid04](https://github.com/AmiraKhalid04) |
+| <img src="https://avatars.githubusercontent.com/Esraa-Hassan0?v=4" width="60" height="60" style="border-radius:50%"> | Esraa Hassan | [@Esraa-Hassan0](https://github.com/Esraa-Hassan0) |
