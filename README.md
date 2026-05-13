@@ -15,6 +15,21 @@ A modular, production-grade embedded firmware for an autonomous wall-following r
 
 ---
 
+## Mechanical Design
+
+<p align="center">
+  <img src="wall-following-car/docs/mech-design.png" alt="Mechanical Design - Wall-Following Robot" width="500"/>
+</p>
+
+The robot features a compact differential-drive configuration with:
+- **Dual 200 RPM DC motors** equipped with wheel encoders for closed-loop speed and distance control
+- **Three ultrasonic sensors** positioned at the front, left, and right for real-time obstacle and wall detection
+- **Caster wheel** providing balance and passive support for smooth motion
+- **12V battery pack** supplying power to the motor system and electronics
+- **H-bridge motor driver** used to control motor direction and speed via PWM signals
+
+---
+
 ## System Architecture
 
 This refactored firmware divides functionality into seven independent modules:
