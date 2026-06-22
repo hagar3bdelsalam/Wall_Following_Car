@@ -472,9 +472,7 @@ avrdude -p atmega328p -c usbasp -e -U flash:w:firmware.hex
 3. **No path memory**: Cannot backtrack to unexplored corridors
 4. **Sensor aliases**: All three distance reads sequential (not parallel)
 
-## <img src="https://i.postimg.cc/3rLr1DFx/team.png" width="21" /> Contributors
-
-## Contributors
+## <img src="https://i.postimg.cc/V6h9V3Mp/group.png" width="21" /> Contributors
 
 | Avatar | Name | Username |
 |--------|------|--------|
